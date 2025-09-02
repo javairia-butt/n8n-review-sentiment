@@ -1,0 +1,66 @@
+# Minimal stack for n8n + Ollama + Postgres to run an AI Review Sentiment workflow
+# Works on Windows 10 + Docker Desktop. No API keys required.
+
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15
+    container_name: n8n_pg
+    environment:
+      POSTGRES_USER: n8n
+      POSTGRES_PASSWORD: n8n
+      POSTGRES_DB: n8n
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U n8n"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: n8n_ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama:/root/.ollama
+    
+  
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: n8n_app
+    depends_on:
+      postgres:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    ports:
+      - "5678:5678"
+    environment:
+      DB_TYPE: postgres
+
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: n8n
+      DB_POSTGRESDB_PASSWORD: n8n
+      N8N_HOST: localhost
+      N8N_PORT: 5678
+      N8N_EDITOR_BASE_URL: http://localhost:5678
+      WEBHOOK_URL: http://localhost:5678
+      GENERIC_TIMEZONE: "Asia/Karachi"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./exports:/project/exports
+      - ./samples:/project/samples
+
+volumes:
+  pgdata:
+  n8n_data:
+  ollama:

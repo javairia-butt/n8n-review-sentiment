@@ -1,0 +1,89 @@
+{
+  "name": "AI Review Sentiment (Webhook → Ollama → Postgres)",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "reviews/inbound",
+        "options": {
+          "responseData": "={{$json}}"
+        }
+      },
+      "id": "WebhookTrigger",
+      "name": "Webhook (Trigger)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [260, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const { customer_name, customer_email, product, review_text } = $json;\nconst prompt = `You are a strict JSON-only analyzer for e-commerce customer reviews.\nTask: 1) classify sentiment as one of [positive, negative, neutral],\n2) extract 3-6 short keywords (comma-separated),\n3) produce confidence score 0..1.\nReturn ONLY valid JSON with keys: sentiment, keywords, confidence.\nReview: \"${review_text}\"`;\n\nreturn [{\n  json: { customer_name, customer_email, product, review_text, prompt }\n}];"
+      },
+      "id": "FunctionPrompt",
+      "name": "Function (Build Prompt)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [540, 300]
+    },
+    {
+      "parameters": {
+        "requestMethod": "POST",
+        "url": "http://ollama:11434/api/generate",
+        "jsonParameters": true,
+        "options": {},
+        "bodyParametersJson": "={\n  \"model\": \"llama3.2\",\n  \"prompt\": \"={{$json.prompt}}\",\n  \"stream\": false\n}"
+      },
+      "id": "HTTP_Ollama",
+      "name": "HTTP (Ollama Generate)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [840, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Ollama returns JSON like: { response: \"<json string>\", ... }\n// Parse nested JSON and merge back into the item.\nconst resp = $json.response;\nlet parsed;\ntry {\n  parsed = JSON.parse(resp);\n} catch (e) {\n  throw new Error('Model did not return valid JSON. Raw: ' + resp);\n}\n\nreturn [{\n  json: {\n    customer_name: $json.customer_name,\n    customer_email: $json.customer_email,\n    product: $json.product,\n    review_text: $json.review_text,\n    sentiment: parsed.sentiment || 'neutral',\n    keywords: parsed.keywords || '',\n    confidence: parsed.confidence ?? 0.5\n  }\n}];"
+      },
+      "id": "FunctionParse",
+      "name": "Function (Parse JSON)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1140, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO reviews (customer_name, customer_email, product, review_text, sentiment, keywords, confidence)\nVALUES ('{{$json.customer_name}}', '{{$json.customer_email}}', '{{$json.product}}', '{{$json.review_text}}', '{{$json.sentiment}}', '{{$json.keywords}}', {{$json.confidence}})\nRETURNING id;"
+      },
+      "id": "PostgresInsert",
+      "name": "Postgres (Insert Row)",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1440, 300],
+      "credentials": {
+        "postgres": {
+          "id": "__POSTGRES_PLACEHOLDER__",
+          "name": "Postgres (docker)"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook (Trigger)": {
+      "main": [[{ "node": "Function (Build Prompt)", "type": "main", "index": 0 }]]
+    },
+    "Function (Build Prompt)": {
+      "main": [[{ "node": "HTTP (Ollama Generate)", "type": "main", "index": 0 }]]
+    },
+    "HTTP (Ollama Generate)": {
+      "main": [[{ "node": "Function (Parse JSON)", "type": "main", "index": 0 }]]
+    },
+    "Function (Parse JSON)": {
+      "main": [[{ "node": "Postgres (Insert Row)", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "pinData": {},
+  "tags": ["ai", "sentiment", "ecommerce"],
+  "versionId": "v2"
+}
+
