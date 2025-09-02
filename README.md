@@ -1,6 +1,6 @@
 # n8n Review Sentiment (AI) — Mini Project
 
-A minimal, **visually clear** workflow for HCCDA students: POST a product review → n8n calls **Ollama** (local LLM) → classify sentiment + keywords → store in **Postgres**.
+A minimal, **visually clear** workflow : POST a product review → n8n calls **Ollama** (local LLM) → classify sentiment + keywords → store in **Postgres**.
 
 ## Stack
 - **n8n** (workflow orchestrator) — http://localhost:5678
